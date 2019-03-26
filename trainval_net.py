@@ -4,51 +4,46 @@
 # Written by Jianwei Yang, based on code from faster R-CNN
 # --------------------------------------------------------
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
+from __future__ import absolute_import, division, print_function
 
-import _init_paths
-import os
-import sys
-import numpy as np
 import argparse
-import pprint
-import pdb
-import time
 import logging
-
-import torch
-from torch.autograd import Variable
-import torch.nn as nn
-import torch.optim as optim
+import os
+import pdb
+import pprint
+import sys
+import time
 from datetime import datetime
 
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.optim as optim
 import torchvision.transforms as transforms
+import yaml
+from torch.autograd import Variable
 from torch.utils.data.sampler import Sampler
-from model.utils.net_utils import vis_detections
-from roi_data_layer.roidb import combined_roidb
-from roi_data_layer.roibatchLoader import roibatchLoader
-from model.utils.config import cfg, cfg_from_file, cfg_from_list, get_output_dir
-from model.utils.net_utils import weights_normal_init, save_net, load_net, \
-    adjust_learning_rate, save_checkpoint, clip_gradient
-import cv2
-from model.fpn.resnet import resnet
-from tensorboardX import SummaryWriter
-from model.utils.summary import *
-import pdb
 
-try:
-    xrange  # Python 2
-except NameError:
-    xrange = range  # Python 3
+import cv2
+from fpn.model.fpn.resnet import resnet
+from fpn.model.utils.config import (cfg, cfg_from_file, cfg_from_list,
+                                    get_output_dir)
+from fpn.model.utils.net_utils import (adjust_learning_rate, clip_gradient,
+                                       load_net, save_checkpoint, save_net,
+                                       vis_detections, weights_normal_init)
+from fpn.model.utils.summary import *
+from fpn.roi_data_layer.roibatchLoader import roibatchLoader
+from fpn.roi_data_layer.roidb import combined_roidb
+from fpn.test import validate
+from tensorboardX import SummaryWriter
+
 
 def parse_args():
     """
     Parse input arguments
     """
-    parser = argparse.ArgumentParser(description='Train a Fast R-CNN network')
-    parser.add_argument('exp_name', type=str, default=None, help='experiment name')
+    parser = argparse.ArgumentParser(description='Train a Faster R-CNN network with FPN')
+    parser.add_argument('exp_name', type=str, help='experiment name')
     parser.add_argument('--dataset', dest='dataset',
                         help='training dataset',
                         default='pascal_voc', type=str)
@@ -63,16 +58,16 @@ def parse_args():
                         default=20, type=int)
     parser.add_argument('--disp_interval', dest='disp_interval',
                         help='number of iterations to display',
-                        default=100, type=int)
+                        default=500, type=int)
     parser.add_argument('--checkpoint_interval', dest='checkpoint_interval',
                         help='number of iterations to display',
                         default=10000, type=int)
 
     parser.add_argument('--save_dir', dest='save_dir',
-                        help='directory to save models', default="/srv/share/jyang375/models", )
+                        help='directory to save models', default="models", )
     parser.add_argument('--nw', dest='num_workers',
                         help='number of worker to load data',
-                        default=0, type=int)
+                        default=4, type=int)
     parser.add_argument('--cuda', dest='cuda',
                         help='whether use CUDA',
                         action='store_true')
@@ -85,9 +80,6 @@ def parse_args():
     parser.add_argument('--bs', dest='batch_size',
                         help='batch_size',
                         default=1, type=int)
-    parser.add_argument('--cag', dest='class_agnostic',
-                        help='whether perform class_agnostic bbox regression',
-                        action='store_true')
 
     # config optimization
     parser.add_argument('--o', dest='optimizer',
@@ -108,10 +100,18 @@ def parse_args():
                         help='training session',
                         default=1, type=int)
 
+    # pretrained trained model
+    parser.add_argument('--pre_checkpoint', dest='pre_checkpoint',
+                        help='path to pretrained file',
+                        default=None, type=str)
+    parser.add_argument('--pre_file', dest='pre_file',
+                        help='path to pretrained config',
+                        default=None, type=str)
+
     # resume trained model
     parser.add_argument('--r', dest='resume',
                         help='resume checkpoint or not',
-                        default=False, type=bool)
+                        action='store_true')
     parser.add_argument('--checksession', dest='checksession',
                         help='checksession to load model',
                         default=1, type=int)
@@ -172,125 +172,97 @@ if __name__ == '__main__':
     print(args)
 
     if args.use_tfboard:
-        # from model.utils.logger import Logger
-        # # Set the logger
-        # logger = Logger('./logs')
         writer = SummaryWriter(comment=args.exp_name)
-
-    # logging.basicConfig(filename="logs/"+args.net+"_"+args.dataset+"_"+str(args.session)+".log",
-    #       filemode='w', level=logging.DEBUG)
-    # logging.info(str(datetime.now()))
 
     if args.dataset == "pascal_voc":
         args.imdb_name = "voc_2007_trainval"
         args.imdbval_name = "voc_2007_test"
-        args.set_cfgs = ['FPN_ANCHOR_SCALES', '[32, 64, 128, 256, 512]', 'FPN_FEAT_STRIDES', '[4, 8, 16, 32, 64]',
-                         'MAX_NUM_GT_BOXES', '20']
+        set_cfgs = ['FPN_ANCHOR_SCALES', '[32, 64, 128, 256, 512]', 'FPN_FEAT_STRIDES', '[4, 8, 16, 32, 64]',
+                    'MAX_NUM_GT_BOXES', '20']
     elif args.dataset == "pascal_voc_0712":
         args.imdb_name = "voc_0712_trainval"
         args.imdbval_name = "voc_0712_test"
-        args.set_cfgs = ['FPN_ANCHOR_SCALES', '[32, 64, 128, 256, 512]', 'FPN_FEAT_STRIDES', '[4, 8, 16, 32, 64]',
-                         'MAX_NUM_GT_BOXES', '20']
+        set_cfgs = ['FPN_ANCHOR_SCALES', '[32, 64, 128, 256, 512]', 'FPN_FEAT_STRIDES', '[4, 8, 16, 32, 64]',
+                    'MAX_NUM_GT_BOXES', '20']
     elif args.dataset == "coco":
         args.imdb_name = "coco_2014_train+coco_2014_valminusminival"
         args.imdbval_name = "coco_2014_minival"
-        args.set_cfgs = ['FPN_ANCHOR_SCALES', '[32, 64, 128, 256, 512]', 'FPN_FEAT_STRIDES', '[4, 8, 16, 32, 64]',
-                         'MAX_NUM_GT_BOXES', '20']
+        set_cfgs = ['FPN_ANCHOR_SCALES', '[32, 64, 128, 256, 512]', 'FPN_FEAT_STRIDES', '[4, 8, 16, 32, 64]',
+                    'MAX_NUM_GT_BOXES', '20']
     elif args.dataset == "imagenet":
         args.imdb_name = "imagenet_train"
         args.imdbval_name = "imagenet_val"
-        args.set_cfgs = ['FPN_ANCHOR_SCALES', '[32, 64, 128, 256, 512]', 'FPN_FEAT_STRIDES', '[4, 8, 16, 32, 64]',
-                         'MAX_NUM_GT_BOXES', '30']
+        set_cfgs = ['FPN_ANCHOR_SCALES', '[32, 64, 128, 256, 512]', 'FPN_FEAT_STRIDES', '[4, 8, 16, 32, 64]',
+                    'MAX_NUM_GT_BOXES', '30']
     elif args.dataset == "vg":
         # train sizes: train, smalltrain, minitrain
         # train scale: ['150-50-20', '150-50-50', '500-150-80', '750-250-150', '1750-700-450', '1600-400-20']
         args.imdb_name = "vg_150-50-50_minitrain"
         args.imdbval_name = "vg_150-50-50_minival"
-        args.set_cfgs = ['FPN_ANCHOR_SCALES', '[32, 64, 128, 256, 512]', 'FPN_FEAT_STRIDES', '[4, 8, 16, 32, 64]',
-                         'MAX_NUM_GT_BOXES', '50']
+        set_cfgs = ['FPN_ANCHOR_SCALES', '[32, 64, 128, 256, 512]', 'FPN_FEAT_STRIDES', '[4, 8, 16, 32, 64]',
+                    'MAX_NUM_GT_BOXES', '50']
+    elif args.dataset == "mot_2017_train":
+        args.imdb_name = "mot_2017_train"
+        args.imdbval_name = "mot_2017_smallval"
+        set_cfgs = ['FPN_ANCHOR_SCALES', '[32, 64, 128, 256, 512]', 'FPN_FEAT_STRIDES', '[4, 8, 16, 32, 64]',
+                    'MAX_NUM_GT_BOXES', '100']
+    elif args.dataset == "mot_2017_small_train":
+        args.imdb_name = "mot_2017_small_train"
+        args.imdbval_name = "mot_2017_smallval"
+        set_cfgs = ['FPN_ANCHOR_SCALES', '[32, 64, 128, 256, 512]', 'FPN_FEAT_STRIDES', '[4, 8, 16, 32, 64]',
+                    'MAX_NUM_GT_BOXES', '100']
+    else:
+        raise NotImplementedError
 
-    args.cfg_file = "cfgs/{}_ls.yml".format(args.net) if args.lscale else "cfgs/{}.yml".format(args.net)
+    cfg_file = f"cfgs/{args.net}{'_ls' if args.lscale else ''}.yml"
+    if args.pre_file is not None:
+        cfg_file = args.pre_file
 
-    if args.cfg_file is not None:
-        cfg_from_file(args.cfg_file)
-    if args.set_cfgs is not None:
-        cfg_from_list(args.set_cfgs)
-
-    # print('trainval', cfg.POOLING_MODE)
-    # print('fpn', get_cfg().POOLING_MODE)
-
+    cfg_from_file(cfg_file)
+    cfg_from_list(set_cfgs)
+    cfg.CUDA = args.cuda
 
     print('Using config:')
     pprint.pprint(cfg)
-    # logging.info(cfg)
+
     np.random.seed(cfg.RNG_SEED)
 
-    # torch.backends.cudnn.benchmark = True
-    if torch.cuda.is_available() and not args.cuda:
-        print("WARNING: You have a CUDA device, so you should probably run with --cuda")
+    output_dir = os.path.join(args.save_dir, args.net,
+                              args.dataset, args.exp_name)
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
 
-    # train set
+    # data
     # -- Note: Use validation set and disable the flipped to enable faster loading.
-    cfg.TRAIN.USE_FLIPPED = True
+    # train
     cfg.USE_GPU_NMS = args.cuda
     imdb, roidb, ratio_list, ratio_index = combined_roidb(args.imdb_name)
     train_size = len(roidb)
 
-    # _print('{:d} roidb entries'.format(len(roidb)), logging)
-    _print('{:d} roidb entries'.format(len(roidb)))
-
-    if args.exp_name is not None:
-        output_dir = args.save_dir + "/" + args.net + "/" + args.dataset + '/' + args.exp_name
-    else:
-        output_dir = args.save_dir + "/" + args.net + "/" + args.dataset
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-
-    sampler_batch = sampler(train_size, args.batch_size)
-
-    # for k, j in enumerate(ratio_index):
-    #     if j == 23225:
-    #         print(k)
-    #         break
-
-    dataset = roibatchLoader(roidb, ratio_list, ratio_index, args.batch_size, \
+    _print('[TRAIN] {:d} roidb entries'.format(len(roidb)))
+    dataset = roibatchLoader(roidb, ratio_list, ratio_index, args.batch_size,
                              imdb.num_classes, training=True)
-    # print('roidb', roidb[23225])
-    # print(dataset[k][1])
-    # print('--------')
-    # print(dataset[k][2], dataset[k][3], dataset[k][4])
+    sampler_batch = sampler(train_size, args.batch_size)
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=args.batch_size,
                                              sampler=sampler_batch, num_workers=args.num_workers)
 
-    # initilize the tensor holder here.
-    im_data = torch.FloatTensor(1)
-    im_info = torch.FloatTensor(1)
-    num_boxes = torch.LongTensor(1)
-    gt_boxes = torch.FloatTensor(1)
-
-    # ship to cuda
-    if args.cuda:
-        im_data = im_data.cuda()
-        im_info = im_info.cuda()
-        num_boxes = num_boxes.cuda()
-        gt_boxes = gt_boxes.cuda()
-
-    # make variable
-    im_data = Variable(im_data)
-    im_info = Variable(im_info)
-    num_boxes = Variable(num_boxes)
-    gt_boxes = Variable(gt_boxes)
-
-    if args.cuda:
-        cfg.CUDA = True
+    # val
+    imdb_val, roidb_val, ratio_list_val, ratio_index_val = combined_roidb(args.imdbval_name, False)
+    imdb_val.competition_mode(on=True)
+    _print('[VAL] {:d} roidb entries'.format(len(roidb_val)))
+    dataset_val = roibatchLoader(roidb_val, ratio_list_val, ratio_index_val, 1,
+                                 imdb_val.num_classes, training=False, normalize=False)
+    dataloader_val = torch.utils.data.DataLoader(dataset_val, batch_size=1,
+                                                 shuffle=False, num_workers=args.num_workers,
+                                                 pin_memory=True)
 
     # initilize the network here.
     if args.net == 'res101':
-        FPN = resnet(imdb.classes, 101, pretrained=True, class_agnostic=args.class_agnostic)
-    elif args.net == 'res50':
-        FPN = resnet(imdb.classes, 50, pretrained=True, class_agnostic=args.class_agnostic)
-    elif args.net == 'res152':
-        FPN = resnet(imdb.classes, 152, pretrained=True, class_agnostic=args.class_agnostic)
+        FPN = resnet(imdb.classes, 101, pretrained=True)
+    # elif args.net == 'res50':
+    #     FPN = resnet(imdb.classes, 50, pretrained=True)
+    # elif args.net == 'res152':
+    #     FPN = resnet(imdb.classes, 152, pretrained=True)
     else:
         print("network is not defined")
         pdb.set_trace()
@@ -299,8 +271,6 @@ if __name__ == '__main__':
 
     lr = cfg.TRAIN.LEARNING_RATE
     lr = args.lr
-    # tr_momentum = cfg.TRAIN.MOMENTUM
-    # tr_momentum = args.momentum
 
     params = []
     for key, value in dict(FPN.named_parameters()).items():
@@ -314,9 +284,21 @@ if __name__ == '__main__':
     if args.optimizer == "adam":
         lr = lr * 0.1
         optimizer = torch.optim.Adam(params)
-
     elif args.optimizer == "sgd":
         optimizer = torch.optim.SGD(params, momentum=cfg.TRAIN.MOMENTUM)
+
+    # resume or pretrained
+    if args.resume and args.pre_checkpoint is not None:
+        raise NotImplementedError
+
+    if args.pre_checkpoint is not None:
+        checkpoint = torch.load(args.pre_checkpoint)
+        model_state_dict = FPN.state_dict()
+        state_dict = {k: v
+                    for k, v in checkpoint['model'].items()
+                    if v.shape == model_state_dict[k].shape}
+        model_state_dict.update(state_dict)
+        FPN.load_state_dict(model_state_dict)
 
     if args.resume:
         load_name = os.path.join(output_dir,
@@ -332,14 +314,28 @@ if __name__ == '__main__':
             cfg.POOLING_MODE = checkpoint['pooling_mode']
         _print("loaded checkpoint %s" % (load_name), )
 
+    # initilize the tensor holder here.
+    im_data = Variable(torch.FloatTensor(1))
+    im_info = Variable(torch.FloatTensor(1))
+    num_boxes = Variable(torch.LongTensor(1))
+    gt_boxes = Variable(torch.FloatTensor(1))
+
+    # ship to cuda
+    if args.cuda:
+        # torch.backends.cudnn.benchmark = True
+        FPN.cuda()
+        im_data = im_data.cuda()
+        im_info = im_info.cuda()
+        num_boxes = num_boxes.cuda()
+        gt_boxes = gt_boxes.cuda()
+    elif torch.cuda.is_available():
+        print("WARNING: You have a CUDA device, so you should probably run with --cuda")
+
     if args.mGPUs:
         FPN = nn.DataParallel(FPN)
 
-    if args.cuda:
-        FPN.cuda()
-
+    # training
     iters_per_epoch = int(train_size / args.batch_size)
-
     for epoch in range(args.start_epoch, args.max_epochs):
         # setting to train mode
         FPN.train()
@@ -406,16 +402,8 @@ if __name__ == '__main__':
                 _print("\t\t\tfg/bg=(%d/%d), time cost: %f" % (fg_cnt, bg_cnt, end - start), )
                 _print("\t\t\trpn_cls: %.4f, rpn_box: %.4f, rcnn_cls: %.4f, rcnn_box %.4f" \
                        % (loss_rpn_cls, loss_rpn_box, loss_rcnn_cls, loss_rcnn_box), )
+
                 if args.use_tfboard:
-                    # info = {
-                    #     'loss': loss_temp,
-                    #     'loss_rpn_cls': loss_rpn_cls,
-                    #     'loss_rpn_box': loss_rpn_box,
-                    #     'loss_rcnn_cls': loss_rcnn_cls,
-                    #     'loss_rcnn_box': loss_rcnn_box,
-                    # }
-                    # for tag, value in info.items():
-                    #     logger.scalar_summary(tag, value, step)
                     scalars = [loss_temp, loss_rpn_cls, loss_rpn_box, loss_rcnn_cls, loss_rcnn_box]
                     names = ['loss', 'loss_rpn_cls', 'loss_rpn_box', 'loss_rcnn_cls', 'loss_rcnn_box']
                     write_scalars(writer, scalars, names, iters_per_epoch * (epoch - 1) + step, tag='train_loss')
@@ -427,23 +415,37 @@ if __name__ == '__main__':
             save_name = os.path.join(output_dir, 'fpn_{}_{}_{}.pth'.format(args.session, epoch, step))
             save_checkpoint({
                 'session': args.session,
-                'epoch': epoch + 1,
+                'epoch': epoch,
                 'model': FPN.module.state_dict(),
                 'optimizer': optimizer.state_dict(),
-                'pooling_mode': cfg.POOLING_MODE,
-                'class_agnostic': args.class_agnostic,
             }, save_name)
         else:
             save_name = os.path.join(output_dir, 'fpn_{}_{}_{}.pth'.format(args.session, epoch, step))
             save_checkpoint({
                 'session': args.session,
-                'epoch': epoch + 1,
+                'epoch': epoch,
                 'model': FPN.state_dict(),
                 'optimizer': optimizer.state_dict(),
-                'pooling_mode': cfg.POOLING_MODE,
-                'class_agnostic': args.class_agnostic,
             }, save_name)
-        _print('save model: {}'.format(save_name), )
+        _print('[Save]: {}'.format(save_name), )
+
+        with open(os.path.join(output_dir, 'config.yaml'), 'w') as outfile:
+            yaml.dump(cfg, outfile, default_flow_style=False)
 
         end = time.time()
-        print(end - start)
+        # print(end - start)
+
+        # validate
+        all_boxes = validate(FPN, dataloader_val, imdb_val,
+                             vis=False, cuda=args.cuda)
+
+        # evaluate validation without print output
+        sys.stdout = open(os.devnull, 'w')
+        aps = imdb_val.evaluate_detections(all_boxes, output_dir)
+        sys.stdout = sys.__stdout__
+
+        # print because of flushing in imdd_eval.evaluate_detections
+        _print("")
+        _print(f'[VAL]: Mean AP = {np.mean(aps):.4f}')
+        if args.use_tfboard:
+            write_scalars(writer, [np.mean(aps)], ['val_mean_ap'], epoch, tag='val_mean_ap')
