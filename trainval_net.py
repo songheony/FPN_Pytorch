@@ -172,7 +172,7 @@ if __name__ == '__main__':
     print(args)
 
     if args.use_tfboard:
-        writer = SummaryWriter(comment=args.exp_name)
+        writer = SummaryWriter(os.path.join('runs', args.net, args.dataset, args.exp_name))
 
     if args.dataset == "pascal_voc":
         args.imdb_name = "voc_2007_trainval"
@@ -195,8 +195,6 @@ if __name__ == '__main__':
         set_cfgs = ['FPN_ANCHOR_SCALES', '[32, 64, 128, 256, 512]', 'FPN_FEAT_STRIDES', '[4, 8, 16, 32, 64]',
                     'MAX_NUM_GT_BOXES', '30']
     elif args.dataset == "vg":
-        # train sizes: train, smalltrain, minitrain
-        # train scale: ['150-50-20', '150-50-50', '500-150-80', '750-250-150', '1750-700-450', '1600-400-20']
         args.imdb_name = "vg_150-50-50_minitrain"
         args.imdbval_name = "vg_150-50-50_minival"
         set_cfgs = ['FPN_ANCHOR_SCALES', '[32, 64, 128, 256, 512]', 'FPN_FEAT_STRIDES', '[4, 8, 16, 32, 64]',
@@ -209,6 +207,21 @@ if __name__ == '__main__':
     elif args.dataset == "mot_2017_small_train":
         args.imdb_name = "mot_2017_small_train"
         args.imdbval_name = "mot_2017_smallval"
+        set_cfgs = ['FPN_ANCHOR_SCALES', '[32, 64, 128, 256, 512]', 'FPN_FEAT_STRIDES', '[4, 8, 16, 32, 64]',
+                    'MAX_NUM_GT_BOXES', '100']
+    elif args.dataset == "mot_2017_seq_1":
+        args.imdb_name = "mot_2017_seq_train_1"
+        args.imdbval_name = "mot_2017_seq_val_1"
+        set_cfgs = ['FPN_ANCHOR_SCALES', '[32, 64, 128, 256, 512]', 'FPN_FEAT_STRIDES', '[4, 8, 16, 32, 64]',
+                    'MAX_NUM_GT_BOXES', '100']
+    elif args.dataset == "mot_2017_seq_2":
+        args.imdb_name = "mot_2017_seq_train_2"
+        args.imdbval_name = "mot_2017_seq_val_2"
+        set_cfgs = ['FPN_ANCHOR_SCALES', '[32, 64, 128, 256, 512]', 'FPN_FEAT_STRIDES', '[4, 8, 16, 32, 64]',
+                    'MAX_NUM_GT_BOXES', '100']
+    elif args.dataset == "mot_2017_seq_3":
+        args.imdb_name = "mot_2017_seq_train_3"
+        args.imdbval_name = "mot_2017_seq_val_3"
         set_cfgs = ['FPN_ANCHOR_SCALES', '[32, 64, 128, 256, 512]', 'FPN_FEAT_STRIDES', '[4, 8, 16, 32, 64]',
                     'MAX_NUM_GT_BOXES', '100']
     else:
@@ -313,13 +326,6 @@ if __name__ == '__main__':
         if 'pooling_mode' in checkpoint.keys():
             cfg.POOLING_MODE = checkpoint['pooling_mode']
         _print("loaded checkpoint %s" % (load_name), )
-
-    #### NEW STUFF ####
-    # for name, param in FPN.named_parameters():
-    #     base_name = name.replace('.weight', '').replace('.bias', '')
-    #     if base_name not in ['RCNN_top.0', 'RCNN_top.2', 'RCNN_cls_score', 'RCNN_bbox_pred']:
-    #         param.requires_grad = False
-    #########################################
 
     # initilize the tensor holder here.
     im_data = Variable(torch.FloatTensor(1))
