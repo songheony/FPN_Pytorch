@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 
+REL_SCRIPT_DIR=$(dirname "$0")
+INITIAL_DIR=$(pwd)
+cd $REL_SCRIPT_DIR
+
 CUDA_PATH=/usr/local/cuda/
 
 python setup.py build_ext --inplace
@@ -39,3 +43,5 @@ nvcc -c -o roi_crop_cuda_kernel.cu.o roi_crop_cuda_kernel.cu \
 	 -D GOOGLE_CUDA=1 -x cu -Xcompiler -fPIC -arch=sm_52
 cd ../
 python build.py
+
+cd $INITIAL_DIR
