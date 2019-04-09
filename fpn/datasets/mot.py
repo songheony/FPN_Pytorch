@@ -48,11 +48,25 @@ class mot(imdb):
                          'pedestrian')
         #self._num_classes = len(self._classes)
 
-        self._train_folders = ['MOT17-02', 'MOT17-04', 'MOT17-05', 'MOT17-09', 'MOT17-10',
-                               'MOT17-11', 'MOT17-13']
-        # self._train_folders = ['MOT17-04']
+        self._train_folders = ['MOT17-02', 'MOT17-04', 'MOT17-05', 'MOT17-09', 'MOT17-10', 'MOT17-11', 'MOT17-13']
         self._test_folders = ['MOT17-01', 'MOT17-03', 'MOT17-06', 'MOT17-07',
                               'MOT17-08', 'MOT17-12', 'MOT17-14']
+
+        if self._image_set == "seq_train_1":
+            self._train_folders = ['MOT17-02', 'MOT17-04',
+                                   'MOT17-05', 'MOT17-09', 'MOT17-10']
+        elif self._image_set == "seq_val_1":
+            self._train_folders = ['MOT17-11', 'MOT17-13']
+        elif self._image_set == "seq_train_2":
+            self._train_folders = ['MOT17-02', 'MOT17-04',
+                                   'MOT17-05', 'MOT17-11', 'MOT17-13']
+        elif self._image_set == "seq_val_2":
+            self._train_folders = ['MOT17-09', 'MOT17-10']
+        elif self._image_set == "seq_train_3":
+            self._train_folders = ['MOT17-02', 'MOT17-09',
+                                   'MOT17-10', 'MOT17-11', 'MOT17-13']
+        elif self._image_set == "seq_val_3":
+            self._train_folders = ['MOT17-04', 'MOT17-05']
 
         assert os.path.exists(self._mot_dir), \
             'Path does not exist: {}'.format(self._mot_dir)
@@ -66,8 +80,8 @@ class mot(imdb):
         self._index_to_height = {}
 
         counter = 0
-        small_train_set = []
-        small_val_set = []
+        frame_train_set = []
+        frame_val_set = []
 
         for f in self._train_folders:
             path = os.path.join(self._mot_train_dir, f)
@@ -94,9 +108,9 @@ class mot(imdb):
                 self._index_to_width[i+counter] = imWidth
                 self._index_to_height[i+counter] = imHeight
                 if i <= seqLength*0.5:
-                    small_train_set.append(i+counter)
+                    frame_train_set.append(i+counter)
                 if i > seqLength*0.75:
-                    small_val_set.append(i+counter)
+                    frame_val_set.append(i+counter)
 
             counter += seqLength
 
@@ -130,16 +144,15 @@ class mot(imdb):
             counter += seqLength
 
         train_set = [i for i in range(1, self._train_counter+1)]
-        #test_set = [i for i in range(self._train_counter+1, counter+1)]
         test_set = [i for i in range(self._train_counter+1, counter+1)]
         all_set = [i for i in range(1, counter+1)]
 
-        if self._image_set == "train":
+        if self._image_set == "train" or "seq" in self._image_set:
             self._image_index = train_set
-        elif self._image_set == "small_val":
-            self._image_index = small_val_set
-        elif self._image_set == "small_train":
-            self._image_index = small_train_set
+        elif self._image_set == "frame_train":
+            self._image_index = frame_train_set
+        elif self._image_set == "frame_val":
+            self._image_index = frame_val_set
         elif self._image_set == "test":
             self._image_index = test_set
         elif self._image_set == "all":
@@ -306,6 +319,7 @@ class mot(imdb):
         self._write_results_file(all_boxes, output_dir)
         tp, fp, prec, rec, ap = self._python_eval(all_boxes)
         print(f"AP: {ap} Prec: {prec} Rec: {rec} TP: {tp} FP: {fp}")
+        return ap
 
     def _matlab_eval(self, all_boxes):
         pass

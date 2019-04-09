@@ -256,6 +256,25 @@ class _FPN(nn.Module):
             rois_pos = Variable(rois[pos_id])
             rois = Variable(rois)
 
+        # if self.training:
+        #     # add random perturbations to improve final reg and cls
+        #     # print(im_info[0][0], im_info[0][1])
+        #     rpn_loss_cls[:] = 0
+        #     rpn_loss_bbox[:] = 0
+
+        #     w = rois[:, 3] - rois[:, 1] + 1
+        #     h = rois[:, 4] - rois[:, 2] + 1
+
+        #     rois[:, 1] = rois[:, 1] + w * Variable(torch.rand(w.shape).cuda() - 0.5) * 0.1
+        #     rois[:, 3] = rois[:, 3] + w * Variable(torch.rand(w.shape).cuda() - 0.5) * 0.1
+        #     rois[:, 2] = rois[:, 2] + h * Variable(torch.rand(h.shape).cuda() - 0.5) * 0.1
+        #     rois[:, 4] = rois[:, 4] + h * Variable(torch.rand(h.shape).cuda() - 0.5) * 0.1
+
+        #     rois[:, 1].data.clamp_(0, im_info[0, 1] - 1)
+        #     rois[:, 2].data.clamp_(0, im_info[0, 0] - 1)
+        #     rois[:, 3].data.clamp_(0, im_info[0, 1] - 1)
+        #     rois[:, 4].data.clamp_(0, im_info[0, 0] - 1)
+
         roi_pool_feat = self._PyramidRoI_Feat(mrcnn_feature_maps, rois, im_info)
 
         # feed pooled features to top model

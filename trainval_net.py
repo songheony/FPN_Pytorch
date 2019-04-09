@@ -314,6 +314,13 @@ if __name__ == '__main__':
             cfg.POOLING_MODE = checkpoint['pooling_mode']
         _print("loaded checkpoint %s" % (load_name), )
 
+    #### NEW STUFF ####
+    # for name, param in FPN.named_parameters():
+    #     base_name = name.replace('.weight', '').replace('.bias', '')
+    #     if base_name not in ['RCNN_top.0', 'RCNN_top.2', 'RCNN_cls_score', 'RCNN_bbox_pred']:
+    #         param.requires_grad = False
+    #########################################
+
     # initilize the tensor holder here.
     im_data = Variable(torch.FloatTensor(1))
     im_info = Variable(torch.FloatTensor(1))

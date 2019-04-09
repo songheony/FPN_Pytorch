@@ -297,13 +297,14 @@ class vg(imdb):
 
     def evaluate_attributes(self, all_boxes, output_dir):
         self._write_voc_results_file(self.attributes, all_boxes, output_dir)
-        self._do_python_eval(output_dir, eval_attributes = True)
+        aps = self._do_python_eval(output_dir, eval_attributes = True)
         if self.config['cleanup']:
             for cls in self._attributes:
                 if cls == '__no_attribute__':
                     continue
                 filename = self._get_vg_results_file_template(output_dir).format(cls)
                 os.remove(filename)
+        return aps
 
     def _get_vg_results_file_template(self, output_dir):
         filename = 'detections_' + self._image_set + '_{:s}.txt'
@@ -395,6 +396,7 @@ class vg(imdb):
         print('--------------------------------------------------------------')
         print('Results computed with the **unofficial** PASCAL VOC Python eval code.')
         print('--------------------------------------------------------------')
+        return aps
 
 
 if __name__ == '__main__':
