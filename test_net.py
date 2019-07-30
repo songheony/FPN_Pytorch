@@ -21,7 +21,7 @@ import torch.optim as optim
 from torch.autograd import Variable
 
 import cv2
-from fpn.model.fpn.resnet import resnet
+from fpn.model.fpn.resnet import FPNResNet
 from fpn.model.nms.nms_wrapper import nms, soft_nms
 from fpn.model.rpn.bbox_transform import bbox_transform_inv, clip_boxes
 from fpn.model.utils.config import (cfg, cfg_from_file, cfg_from_list,
@@ -78,9 +78,6 @@ def parse_args():
     parser.add_argument('--checkepoch', dest='checkepoch',
                         help='checkepoch to load network',
                         default=1, type=int)
-    parser.add_argument('--checkpoint', dest='checkpoint',
-                        help='checkpoint to load network',
-                        default=10021, type=int)
     parser.add_argument('--vis', dest='vis',
                         help='visualization mode',
                         action='store_true')
@@ -110,7 +107,7 @@ def main():
     elif args.dataset == "vg":
         args.imdbval_name = "vg_150-50-50_minival"
         set_cfgs = ['ANCHOR_SCALES', '[4, 8, 16, 32]', 'ANCHOR_RATIOS', '[0.5,1,2]']
-    elif 'mot_2017' in args.dataset:
+    elif 'mot_2017' in args.dataset or 'mot19_cvpr' in args.dataset:
         set_cfgs = ['ANCHOR_SCALES', '[4, 8, 16, 32]', 'ANCHOR_RATIOS', '[0.5,1,2]']
     # elif args.dataset == "mot_2017_train":
     #     # args.imdb_name = "mot_2017_train"
@@ -136,7 +133,7 @@ def main():
     if not os.path.exists(input_dir):
         raise Exception('There is no input directory for loading network from ' + input_dir)
     load_name = os.path.join(
-        input_dir, f"fpn_{args.checksession}_{args.checkepoch}_{args.checkpoint}.pth")
+        input_dir, f"fpn_{args.checksession}_{args.checkepoch}.pth")
 
     cfg_file = os.path.join(input_dir, 'config.yaml')
     cfg_from_file(cfg_file)
@@ -161,25 +158,23 @@ def main():
     # network
     print("load checkpoint %s" % (load_name))
 
-    if args.net == 'vgg16':
-        fpn = vgg16(imdb.classes, pretrained=False)
-    elif args.net == 'res101':
-        fpn = resnet(imdb.classes, 101, pretrained=False)
+    if args.net == 'res101':
+        FPN = FPNResNet(imdb.classes, 101, pretrained=False)
     elif args.net == 'res50':
-        fpn = resnet(imdb.classes, 50, pretrained=False)
+        FPN = FPNResNet(imdb.classes, 50, pretrained=False)
     elif args.net == 'res152':
-        fpn = resnet(imdb.classes, 152, pretrained=False)
+        FPN = FPNResNet(imdb.classes, 152, pretrained=False)
     else:
-        print("network is not defined")
+        print("Network is not defined.")
         pdb.set_trace()
 
-    fpn.create_architecture()
-    fpn.load_state_dict(torch.load(load_name)['model'])
+    FPN.create_architecture()
+    FPN.load_state_dict(torch.load(load_name)['model'])
     print('load model successfully!')
 
     if args.cuda:
         cfg.CUDA = True
-        fpn.cuda()
+        FPN.cuda()
     elif torch.cuda.is_available():
         print("WARNING: You have a CUDA device, so you should probably run with --cuda")
 
@@ -188,7 +183,7 @@ def main():
     _t = {'im_detect': time.time(), 'misc': time.time()}
     det_file = os.path.join(output_dir, 'detections.pkl')
 
-    all_boxes = validate(fpn, dataloader, imdb, vis=args.vis,
+    all_boxes = validate(FPN, dataloader, imdb, vis=args.vis,
                          cuda=args.cuda, soft_nms=args.soft_nms, score_thresh=args.score_thresh)
 
     print('Evaluating detections')

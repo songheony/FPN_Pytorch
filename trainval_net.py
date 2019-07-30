@@ -11,6 +11,7 @@ import logging
 import os
 import pdb
 import pprint
+import random
 import sys
 import time
 from datetime import datetime
@@ -25,7 +26,7 @@ from torch.autograd import Variable
 from torch.utils.data.sampler import Sampler
 
 import cv2
-from fpn.model.fpn.resnet import resnet
+from fpn.model.fpn.resnet import FPNResNet
 from fpn.model.utils.config import (cfg, cfg_from_file, cfg_from_list,
                                     get_output_dir)
 from fpn.model.utils.net_utils import (adjust_learning_rate, clip_gradient,
@@ -85,9 +86,6 @@ def parse_args():
     parser.add_argument('--o', dest='optimizer',
                         help='training optimizer',
                         default="sgd", type=str)
-    parser.add_argument('--lr', dest='lr',
-                        help='starting learning rate',
-                        default=0.001, type=float)
     parser.add_argument('--lr_decay_step', dest='lr_decay_step',
                         help='step to do learning rate decay, unit is epoch',
                         default=5, type=int)
@@ -112,15 +110,14 @@ def parse_args():
     parser.add_argument('--r', dest='resume',
                         help='resume checkpoint or not',
                         action='store_true')
-    parser.add_argument('--checksession', dest='checksession',
+    parser.add_argument('--resume_exp_name', dest='resume_exp_name',
+                        help='exp_name to load model', type=str)
+    parser.add_argument('--resume_session', dest='resume_session',
                         help='checksession to load model',
                         default=1, type=int)
-    parser.add_argument('--checkepoch', dest='checkepoch',
+    parser.add_argument('--resume_epoch', dest='resume_epoch',
                         help='checkepoch to load model',
                         default=1, type=int)
-    parser.add_argument('--checkpoint', dest='checkpoint',
-                        help='checkpoint to load model',
-                        default=0, type=int)
     # log and diaplay
     parser.add_argument('--use_tfboard', dest='use_tfboard',
                         help='whether use tensorflow tensorboard',
@@ -201,7 +198,7 @@ if __name__ == '__main__':
                     'MAX_NUM_GT_BOXES', '50']
     elif args.dataset == "mot_2017_train":
         args.imdb_name = "mot_2017_train"
-        args.imdbval_name = "mot_2017_smallval"
+        args.imdbval_name = "mot_2017_test"
         set_cfgs = ['FPN_ANCHOR_SCALES', '[32, 64, 128, 256, 512]', 'FPN_FEAT_STRIDES', '[4, 8, 16, 32, 64]',
                     'MAX_NUM_GT_BOXES', '100']
     elif args.dataset == "mot_2017_small_train":
@@ -224,21 +221,79 @@ if __name__ == '__main__':
         args.imdbval_name = "mot_2017_seq_val_3"
         set_cfgs = ['FPN_ANCHOR_SCALES', '[32, 64, 128, 256, 512]', 'FPN_FEAT_STRIDES', '[4, 8, 16, 32, 64]',
                     'MAX_NUM_GT_BOXES', '100']
+    elif args.dataset == "mot_2017_seq_4":
+        args.imdb_name = "mot_2017_seq_train_4"
+        args.imdbval_name = "mot_2017_seq_val_4"
+        set_cfgs = ['FPN_ANCHOR_SCALES', '[32, 64, 128, 256, 512]', 'FPN_FEAT_STRIDES', '[4, 8, 16, 32, 64]',
+                    'MAX_NUM_GT_BOXES', '100']
+    elif args.dataset == "mot_2017_seq_5":
+        args.imdb_name = "mot_2017_seq_train_5"
+        args.imdbval_name = "mot_2017_seq_val_5"
+        set_cfgs = ['FPN_ANCHOR_SCALES', '[32, 64, 128, 256, 512]', 'FPN_FEAT_STRIDES', '[4, 8, 16, 32, 64]',
+                    'MAX_NUM_GT_BOXES', '100']
+    elif args.dataset == "mot_2017_seq_6":
+        args.imdb_name = "mot_2017_seq_train_6"
+        args.imdbval_name = "mot_2017_seq_val_6"
+        set_cfgs = ['FPN_ANCHOR_SCALES', '[32, 64, 128, 256, 512]', 'FPN_FEAT_STRIDES', '[4, 8, 16, 32, 64]',
+                    'MAX_NUM_GT_BOXES', '100']
+    elif args.dataset == "mot_2017_seq_7":
+        args.imdb_name = "mot_2017_seq_train_7"
+        args.imdbval_name = "mot_2017_seq_val_7"
+        set_cfgs = ['FPN_ANCHOR_SCALES', '[32, 64, 128, 256, 512]', 'FPN_FEAT_STRIDES', '[4, 8, 16, 32, 64]',
+                    'MAX_NUM_GT_BOXES', '100']
+    elif args.dataset == "mot19_cvpr_train":
+        args.imdb_name = "mot19_cvpr_train"
+        args.imdbval_name = "mot19_cvpr_test"
+        set_cfgs = ['FPN_ANCHOR_SCALES', '[32, 64, 128, 256, 512]', 'FPN_FEAT_STRIDES', '[4, 8, 16, 32, 64]',
+                    'MAX_NUM_GT_BOXES', '100']
+    elif args.dataset == "mot19_cvpr_seq_1":
+        args.imdb_name = "mot19_cvpr_seq_train_1"
+        args.imdbval_name = "mot19_cvpr_seq_val_1"
+        set_cfgs = ['FPN_ANCHOR_SCALES', '[32, 64, 128, 256, 512]', 'FPN_FEAT_STRIDES', '[4, 8, 16, 32, 64]',
+                    'MAX_NUM_GT_BOXES', '100']
+    elif args.dataset == "mot19_cvpr_seq_2":
+        args.imdb_name = "mot19_cvpr_seq_train_2"
+        args.imdbval_name = "mot19_cvpr_seq_val_2"
+        set_cfgs = ['FPN_ANCHOR_SCALES', '[32, 64, 128, 256, 512]', 'FPN_FEAT_STRIDES', '[4, 8, 16, 32, 64]',
+                    'MAX_NUM_GT_BOXES', '100']
+    elif args.dataset == "mot19_cvpr_seq_3":
+        args.imdb_name = "mot19_cvpr_seq_train_3"
+        args.imdbval_name = "mot19_cvpr_seq_val_3"
+        set_cfgs = ['FPN_ANCHOR_SCALES', '[32, 64, 128, 256, 512]', 'FPN_FEAT_STRIDES', '[4, 8, 16, 32, 64]',
+                    'MAX_NUM_GT_BOXES', '100']
+    elif args.dataset == "mot19_cvpr_seq_4":
+        args.imdb_name = "mot19_cvpr_seq_train_4"
+        args.imdbval_name = "mot19_cvpr_seq_val_4"
+        set_cfgs = ['FPN_ANCHOR_SCALES', '[32, 64, 128, 256, 512]', 'FPN_FEAT_STRIDES', '[4, 8, 16, 32, 64]',
+                    'MAX_NUM_GT_BOXES', '100']
     else:
         raise NotImplementedError
 
-    cfg_file = f"cfgs/{args.net}{'_ls' if args.lscale else ''}.yml"
+    # load config from pre file
     if args.pre_file is not None:
         cfg_file = args.pre_file
+        cfg_from_file(cfg_file)
 
+    # load changes from current config file
+    cfg_file = f"cfgs/{args.net}{'_ls' if args.lscale else ''}.yml"
     cfg_from_file(cfg_file)
+
+    # load changes from set_cfg list
     cfg_from_list(set_cfgs)
     cfg.CUDA = args.cuda
 
     print('Using config:')
     pprint.pprint(cfg)
 
+    # set seeds and make deterministic
+    torch.backends.cudnn.fastest = False
+    torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.deterministic = True
+
+    random.seed(cfg.RNG_SEED)
     np.random.seed(cfg.RNG_SEED)
+    torch.manual_seed(cfg.RNG_SEED)
+    torch.cuda.manual_seed_all(cfg.RNG_SEED)
 
     output_dir = os.path.join(args.save_dir, args.net,
                               args.dataset, args.exp_name)
@@ -259,7 +314,15 @@ if __name__ == '__main__':
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=args.batch_size,
                                              sampler=sampler_batch, num_workers=args.num_workers)
 
-    # val
+    # evaluation
+    imdb_train, roidb_train, ratio_list_train, ratio_index_train = combined_roidb(args.imdb_name, False)
+    imdb_train.competition_mode(on=True)
+    dataset_train = roibatchLoader(roidb_train, ratio_list_train, ratio_index_train, 1,
+                                   imdb_train.num_classes, training=False, normalize=False)
+    dataloader_train = torch.utils.data.DataLoader(dataset_train, batch_size=1,
+                                                   shuffle=False, num_workers=args.num_workers,
+                                                   pin_memory=True)
+
     imdb_val, roidb_val, ratio_list_val, ratio_index_val = combined_roidb(args.imdbval_name, False)
     imdb_val.competition_mode(on=True)
     _print('[VAL] {:d} roidb entries'.format(len(roidb_val)))
@@ -271,20 +334,18 @@ if __name__ == '__main__':
 
     # initilize the network here.
     if args.net == 'res101':
-        FPN = resnet(imdb.classes, 101, pretrained=True)
-    # elif args.net == 'res50':
-    #     FPN = resnet(imdb.classes, 50, pretrained=True)
-    # elif args.net == 'res152':
-    #     FPN = resnet(imdb.classes, 152, pretrained=True)
+        FPN = FPNResNet(imdb.classes, 101, pretrained=True)
+    elif args.net == 'res50':
+        FPN = FPNResNet(imdb.classes, 50, pretrained=True)
+    elif args.net == 'res152':
+        FPN = FPNResNet(imdb.classes, 152, pretrained=True)
     else:
-        print("network is not defined")
+        print("Network is not defined.")
         pdb.set_trace()
 
     FPN.create_architecture()
 
     lr = cfg.TRAIN.LEARNING_RATE
-    lr = args.lr
-
     params = []
     for key, value in dict(FPN.named_parameters()).items():
         if value.requires_grad:
@@ -314,17 +375,19 @@ if __name__ == '__main__':
         FPN.load_state_dict(model_state_dict)
 
     if args.resume:
-        load_name = os.path.join(output_dir,
-                                 'fpn_{}_{}_{}.pth'.format(args.checksession, args.checkepoch, args.checkpoint))
+        load_name = os.path.join(os.path.join(args.save_dir, args.net, args.dataset, args.resume_exp_name),
+                                 f'fpn_{args.resume_session}_{args.resume_epoch}.pth')
         _print("loading checkpoint %s" % (load_name), )
         checkpoint = torch.load(load_name)
         args.session = checkpoint['session']
-        args.start_epoch = checkpoint['epoch']
+        args.start_epoch = checkpoint['epoch'] + 1
         FPN.load_state_dict(checkpoint['model'])
         optimizer.load_state_dict(checkpoint['optimizer'])
         lr = optimizer.param_groups[0]['lr']
+
         if 'pooling_mode' in checkpoint.keys():
             cfg.POOLING_MODE = checkpoint['pooling_mode']
+
         _print("loaded checkpoint %s" % (load_name), )
 
     # initilize the tensor holder here.
@@ -424,22 +487,13 @@ if __name__ == '__main__':
                 loss_temp = 0
                 start = time.time()
 
-        if args.mGPUs:
-            save_name = os.path.join(output_dir, 'fpn_{}_{}_{}.pth'.format(args.session, epoch, step))
-            save_checkpoint({
-                'session': args.session,
-                'epoch': epoch,
-                'model': FPN.module.state_dict(),
-                'optimizer': optimizer.state_dict(),
-            }, save_name)
-        else:
-            save_name = os.path.join(output_dir, 'fpn_{}_{}_{}.pth'.format(args.session, epoch, step))
-            save_checkpoint({
-                'session': args.session,
-                'epoch': epoch,
-                'model': FPN.state_dict(),
-                'optimizer': optimizer.state_dict(),
-            }, save_name)
+        save_name = os.path.join(output_dir, f'fpn_{args.session}_{epoch}.pth')
+        save_checkpoint({
+            'session': args.session,
+            'epoch': epoch,
+            'model': FPN.module.state_dict() if args.mGPUs else FPN.state_dict(),
+            'optimizer': optimizer.state_dict(),
+        }, save_name)
         _print('[Save]: {}'.format(save_name), )
 
         with open(os.path.join(output_dir, 'config.yaml'), 'w') as outfile:
@@ -448,11 +502,34 @@ if __name__ == '__main__':
         end = time.time()
         # print(end - start)
 
-        # validate
+        #
+        # evaluation
+        #
+
+        #
+        # train
+        #
+        all_boxes = validate(FPN, dataloader_train, imdb_train,
+                             vis=False, cuda=args.cuda)
+
+        # evaluate without print output
+        sys.stdout = open(os.devnull, 'w')
+        aps = imdb.evaluate_detections(all_boxes, output_dir)
+        sys.stdout = sys.__stdout__
+
+        # print because of flushing in imdd_eval.evaluate_detections
+        _print("")
+        _print(f'[TRAIN]: Mean AP = {np.mean(aps):.4f}')
+        if args.use_tfboard:
+            write_scalars(writer, [np.mean(aps)], ['train'], epoch, tag='mean_ap')
+
+        #
+        # val
+        #
         all_boxes = validate(FPN, dataloader_val, imdb_val,
                              vis=False, cuda=args.cuda)
 
-        # evaluate validation without print output
+        # evaluate without print output
         sys.stdout = open(os.devnull, 'w')
         aps = imdb_val.evaluate_detections(all_boxes, output_dir)
         sys.stdout = sys.__stdout__
@@ -461,4 +538,4 @@ if __name__ == '__main__':
         _print("")
         _print(f'[VAL]: Mean AP = {np.mean(aps):.4f}')
         if args.use_tfboard:
-            write_scalars(writer, [np.mean(aps)], ['val_mean_ap'], epoch, tag='val_mean_ap')
+            write_scalars(writer, [np.mean(aps)], ['val'], epoch, tag='mean_ap')
