@@ -5,6 +5,7 @@ from __future__ import print_function
 from ..utils.config import cfg
 from .fpn import _FPN
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -215,25 +216,40 @@ def resnet152(pretrained=False):
     model.load_state_dict(model_zoo.load_url(model_urls['resnet152']))
   return model
 
-class resnet(_FPN):
+class FPNResNet(_FPN):
+  res101_model_path = 'data/pretrained_model/resnet101_caffe.pth'
+  dout_base_model = 256
+
   def __init__(self, classes, num_layers=101, pretrained=False):
-    self.model_path = 'data/pretrained_model/resnet101_caffe.pth'
-    # self.model_path = '../../output/frcnn/res101/mot_2017_small_train/small_mot/res101_faster_rcnn_iter_180000.pth'
-    # self.model_path = '../../data/imagenet_weights/res101.pth'
-    self.dout_base_model = 256
     self.pretrained = pretrained
     self.num_layers = num_layers
 
     _FPN.__init__(self, classes)
 
   def _init_modules(self):
-    # resnet = globals()[f"resnet{self.num_layers}"](self.pretrained)
-    resnet = resnet101()
+    resnet_str = f"resnet{self.num_layers}"
+    resnet = globals()[resnet_str]()
 
     if self.pretrained == True:
-      print("[Load] pretrained weights from %s" %(self.model_path))
-      state_dict = torch.load(self.model_path)
-      resnet.load_state_dict({k:v for k,v in state_dict.items() if k in resnet.state_dict()})
+      if self.num_layers == 101:
+        # for res101 we use caffe pretrained weights
+        print(f"[Load] pretrained weights from {self.res101_model_path}")
+        state_dict = torch.load(self.res101_model_path)
+        resnet.load_state_dict({k:v for k,v in state_dict.items() if k in resnet.state_dict()})
+      else:
+        # for other ResNets we use PyTorch pretrained weights
+        print(f"[Load] pretrained weights from {model_urls[resnet_str]}")
+
+        # change normalization and normalize between [0, 1]
+        cfg.PIXEL_MEANS = 255 * np.array([[[0.485, 0.456, 0.406]]])
+        cfg.PIXEL_STDVS = 255 * np.array([[[0.229, 0.224, 0.225]]])
+
+        state_dict = model_zoo.load_url(model_urls[resnet_str])
+
+        # PyTorch is trained BGR but we need RGB
+        state_dict['conv1.weight'].data = state_dict['conv1.weight'].data[:, [2, 1, 0]]
+
+        resnet.load_state_dict(state_dict)
 
     self.RCNN_layer0 = nn.Sequential(resnet.conv1, resnet.bn1, resnet.relu, resnet.maxpool)
     self.RCNN_layer1 = nn.Sequential(resnet.layer1)
