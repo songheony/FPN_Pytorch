@@ -19,7 +19,7 @@ from ..model.utils.config import cfg
 from .imdb import imdb
 
 
-class mot(imdb):
+class MOT17(imdb):
     """ Data class for the Multiple Object Tracking Dataset
 
     In the MOT dataset the different images are stored in folders belonging to the
@@ -29,7 +29,6 @@ class mot(imdb):
 
     Attributes:
         _image_index: List of mapped unique indexes of each image that will be used in this set
-
 
     """
 
@@ -49,24 +48,14 @@ class mot(imdb):
         #self._num_classes = len(self._classes)
 
         self._train_folders = ['MOT17-02', 'MOT17-04', 'MOT17-05', 'MOT17-09', 'MOT17-10', 'MOT17-11', 'MOT17-13']
-        self._test_folders = ['MOT17-01', 'MOT17-03', 'MOT17-06', 'MOT17-07',
-                              'MOT17-08', 'MOT17-12', 'MOT17-14']
+        self._test_folders = ['MOT17-01', 'MOT17-03', 'MOT17-06', 'MOT17-07', 'MOT17-08', 'MOT17-12', 'MOT17-14']
 
-        if self._image_set == "seq_train_1":
-            self._train_folders = ['MOT17-02', 'MOT17-04',
-                                   'MOT17-05', 'MOT17-09', 'MOT17-10']
-        elif self._image_set == "seq_val_1":
-            self._train_folders = ['MOT17-11', 'MOT17-13']
-        elif self._image_set == "seq_train_2":
-            self._train_folders = ['MOT17-02', 'MOT17-04',
-                                   'MOT17-05', 'MOT17-11', 'MOT17-13']
-        elif self._image_set == "seq_val_2":
-            self._train_folders = ['MOT17-09', 'MOT17-10']
-        elif self._image_set == "seq_train_3":
-            self._train_folders = ['MOT17-02', 'MOT17-09',
-                                   'MOT17-10', 'MOT17-11', 'MOT17-13']
-        elif self._image_set == "seq_val_3":
-            self._train_folders = ['MOT17-04', 'MOT17-05']
+        if 'seq' in self._image_set:
+            split_num = int(self._image_set[-1])
+            if 'train' in self._image_set:
+                self._train_folders.pop(len(self._train_folders) - split_num)
+            else:
+                self._train_folders = [self._train_folders.pop(len(self._train_folders) - split_num)]
 
         assert os.path.exists(self._mot_dir), \
             'Path does not exist: {}'.format(self._mot_dir)
@@ -213,13 +202,15 @@ class mot(imdb):
             overlaps = np.zeros((0, self.num_classes), dtype=np.float32)
             overlaps = scipy.sparse.csr_matrix(overlaps)
             seg_areas = np.zeros((0), dtype=np.float32)
+            visibilities = np.zeros((0), dtype=np.float32)
 
             return {'boxes': boxes,
                     'gt_classes': gt_classes,
                     #'gt_ishard': ishards,
                     'gt_overlaps': overlaps,
                     'flipped': False,
-                    'seg_areas': seg_areas}
+                    'seg_areas': seg_areas,
+                    'visibilities': visibilities}
 
         image_pth = self._index_to_path[index]
         file_index = int(os.path.basename(image_pth).split('.')[0])
@@ -241,6 +232,7 @@ class mot(imdb):
                     bb['bb_top'] = int(row[3])
                     bb['bb_width'] = int(row[4])
                     bb['bb_height'] = int(row[5])
+                    bb['visibility'] = float(row[8])
 
                     # Check if bb is inside the image
                     #if bb['bb_left'] > 0 and bb['bb_top'] > 0 \
@@ -268,6 +260,7 @@ class mot(imdb):
         # "Seg" area for pascal is just the box area
         seg_areas = np.zeros((num_objs), dtype=np.float32)
         #ishards = np.zeros((num_objs), dtype=np.int32)
+        visibilities = np.zeros((num_objs), dtype=np.float32)
 
         for i, bb in enumerate(bounding_boxes):
             # Make pixel indexes 0-based, should already be 0-based (or not)
@@ -283,6 +276,7 @@ class mot(imdb):
             seg_areas[i] = float((x2 - x1 + 1) * (y2 - y1 + 1))
             #ishards[i] = 0
             overlaps[i][1] = 1.0
+            visibilities[i] = bb['visibility']
 
         overlaps = scipy.sparse.csr_matrix(overlaps)
 
@@ -291,7 +285,8 @@ class mot(imdb):
                 #'gt_ishard': ishards,
                 'gt_overlaps': overlaps,
                 'flipped': False,
-                'seg_areas': seg_areas}
+                'seg_areas': seg_areas,
+                'visibilities': visibilities}
 
     """
     def evaluate_detections(self, all_boxes, output_dir=None, ret=False):
@@ -352,7 +347,8 @@ class mot(imdb):
             # Only keep gt data for right class
             for im_gt in gt_roidb:
                 bbox = im_gt['boxes'][np.where(
-                    im_gt['gt_classes'] == cls_index)]
+                    np.logical_and(im_gt['gt_classes'] == cls_index,
+                                   im_gt['visibilities'] >= 0.5))]
                 found = np.zeros(bbox.shape[0])
                 gt.append(bbox)
                 gt_found.append(found)
@@ -506,6 +502,124 @@ class mot(imdb):
                 writer = csv.writer(of, delimiter=',')
                 for d in v:
                     writer.writerow(d)
+
+
+class MOT19CVPR(MOT17):
+
+    def __init__(self, image_set):
+        imdb.__init__(self, f'mot19_{image_set}')
+
+        self._image_set = image_set
+        self._mot_dir = os.path.join(
+            cfg.DATA_DIR, 'MOT19_CVPR')
+        self._mot_train_dir = os.path.join(self._mot_dir, 'train')
+        self._mot_test_dir = os.path.join(self._mot_dir, 'test')
+        self._roidb_handler = self.gt_roidb
+
+        self._classes = ('__background__',  # always index 0
+                         'pedestrian')
+        #self._num_classes = len(self._classes)
+
+        self._train_folders = ['CVPR19-01', 'CVPR19-02', 'CVPR19-03', 'CVPR19-05']
+        self._test_folders = ['CVPR19-04', 'CVPR19-06', 'CVPR19-07', 'CVPR19-08']
+
+        if 'seq' in self._image_set:
+            split_num = int(self._image_set[-1])
+            if 'train' in self._image_set:
+                self._train_folders.pop(len(self._train_folders) - split_num)
+            else:
+                self._train_folders = [self._train_folders.pop(
+                    len(self._train_folders) - split_num)]
+
+        assert os.path.exists(self._mot_dir), \
+            'Path does not exist: {}'.format(self._mot_dir)
+        assert os.path.exists(self._mot_train_dir), \
+            'Path does not exist: {}'.format(self._mot_train_dir)
+        assert os.path.exists(self._mot_test_dir), \
+            'Path does not exist: {}'.format(self._mot_test_dir)
+
+        self._index_to_path = {}
+        self._index_to_width = {}
+        self._index_to_height = {}
+
+        counter = 0
+        frame_train_set = []
+        frame_val_set = []
+
+        for f in self._train_folders:
+            path = os.path.join(self._mot_train_dir, f)
+            config_file = os.path.join(path, 'seqinfo.ini')
+
+            assert os.path.exists(config_file), \
+                'Path does not exist: {}'.format(config_file)
+
+            config = configparser.ConfigParser()
+            config.read(config_file)
+            seqLength = int(config['Sequence']['seqLength'])
+            imWidth = int(config['Sequence']['imWidth'])
+            imHeight = int(config['Sequence']['imHeight'])
+            imExt = config['Sequence']['imExt']
+            imDir = config['Sequence']['imDir']
+
+            _imDir = os.path.join(path, imDir)
+
+            for i in range(1, seqLength + 1):
+                im_path = os.path.join(_imDir, ("{:06d}" + imExt).format(i))
+                assert os.path.exists(im_path), \
+                    'Path does not exist: {}'.format(im_path)
+                self._index_to_path[i + counter] = im_path
+                self._index_to_width[i + counter] = imWidth
+                self._index_to_height[i + counter] = imHeight
+                if i <= seqLength * 0.5:
+                    frame_train_set.append(i + counter)
+                if i > seqLength * 0.75:
+                    frame_val_set.append(i + counter)
+
+            counter += seqLength
+
+        self._train_counter = counter
+
+        for f in self._test_folders:
+            path = os.path.join(self._mot_test_dir, f)
+            config_file = os.path.join(path, 'seqinfo.ini')
+
+            assert os.path.exists(config_file), \
+                'Path does not exist: {}'.format(config_file)
+
+            config = configparser.ConfigParser()
+            config.read(config_file)
+            seqLength = int(config['Sequence']['seqLength'])
+            imWidth = int(config['Sequence']['imWidth'])
+            imHeight = int(config['Sequence']['imHeight'])
+            imExt = config['Sequence']['imExt']
+            imDir = config['Sequence']['imDir']
+
+            _imDir = os.path.join(path, imDir)
+
+            for i in range(1, seqLength + 1):
+                im_path = os.path.join(_imDir, ("{:06d}" + imExt).format(i))
+                assert os.path.exists(im_path), \
+                    'Path does not exist: {}'.format(im_path)
+                self._index_to_path[i + counter] = im_path
+                self._index_to_width[i + counter] = imWidth
+                self._index_to_height[i + counter] = imHeight
+
+            counter += seqLength
+
+        train_set = [i for i in range(1, self._train_counter + 1)]
+        test_set = [i for i in range(self._train_counter + 1, counter + 1)]
+        all_set = [i for i in range(1, counter + 1)]
+
+        if self._image_set == "train" or "seq" in self._image_set:
+            self._image_index = train_set
+        elif self._image_set == "frame_train":
+            self._image_index = frame_train_set
+        elif self._image_set == "frame_val":
+            self._image_index = frame_val_set
+        elif self._image_set == "test":
+            self._image_index = test_set
+        elif self._image_set == "all":
+            self._image_index = all_set
 
 
 if __name__ == '__main__':

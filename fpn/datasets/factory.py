@@ -12,7 +12,7 @@ import numpy as np
 
 from .coco import coco
 from .imagenet import imagenet
-from .mot import mot
+from .mot import MOT17, MOT19CVPR
 from .pascal_voc import pascal_voc
 from .vg import vg
 
@@ -44,10 +44,27 @@ for year in ['2015']:
     __sets[name] = (lambda split=split, year=year: coco(split, year))
 
 # MOT17 dataset
+mot17_splits = ['train', 'frame_val', 'frame_train', 'test', 'all']
+# we generate 7 train/val splits for cross validation with single sequence val sets
+# ['MOT17-02', 'MOT17-04', 'MOT17-05', 'MOT17-09', 'MOT17-10', 'MOT17-11', 'MOT17-13']
+for i in range(1, 8):
+  mot17_splits += [f'seq_train_{i}']
+  mot17_splits += [f'seq_val_{i}']
 for year in ['2017']:
-  for split in ['train', 'frame_val', 'frame_train', 'seq_train_1', 'seq_val_1', 'seq_train_2', 'seq_val_2', 'seq_train_3', 'seq_val_3', 'test', 'all']:
-    name = 'mot_{}_{}'.format(year, split)
-    __sets[name] = (lambda split=split, year=year: mot(split, year))
+  for split in mot17_splits:
+    name = f'mot_{year}_{split}'
+    __sets[name] = (lambda split=split, year=year: MOT17(split, year))
+
+# MOT19_CVPR dataset
+mot19_cvpr_splits = ['train', 'frame_val', 'frame_train', 'test', 'all']
+# we generate 4 train/val splits for cross validation with single sequence val sets
+# ['CVPR-01', 'CVPR-02', 'CVPR-03', 'CVPR-05']
+for i in range(1, 5):
+  mot19_cvpr_splits += [f'seq_train_{i}']
+  mot19_cvpr_splits += [f'seq_val_{i}']
+for split in mot19_cvpr_splits:
+  name = f'mot19_cvpr_{split}'
+  __sets[name] = (lambda split=split: MOT19CVPR(split))
 
 # Set up vg_<split>
 # for version in ['1600-400-20']:
