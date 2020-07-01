@@ -1,3 +1,6 @@
+I've edited the code for compatiblity with PyTorch 1.7
+
+
 Based on [jwyang/fpn.pytorch](https://github.com/jwyang/fpn.pytorch), i change little code to get a more reasonable mAP when training pascal voc 2007 and 07+12.
 Pytorch implementation of Feature Pyramid Network (FPN) for Object Detection.
 
