@@ -1,4 +1,4 @@
-I've edited the code for compatiblity with PyTorch 1.7
+# I've edited the code for compatiblity with PyTorch 0.4.1
 
 
 Based on [jwyang/fpn.pytorch](https://github.com/jwyang/fpn.pytorch), i change little code to get a more reasonable mAP when training pascal voc 2007 and 07+12.
